@@ -10,12 +10,13 @@ class T5Dataset(Dataset):
         self.source_files = sorted(glob.glob(os.path.join(data_dir, f"*{source_ext}")))
         self.target_files = sorted(glob.glob(os.path.join(data_dir, f"*{target_ext}")))
         assert len(self.source_files) == len(self.target_files), "Mismatch between source and target files."
-
         self.tokenizer = tokenizer
         self.max_len = max_len
-        self.nlp = spacy.load("en_ner_bionlp13cg_md")  # Make sure the model is installed
+        try:
+            self.nlp = spacy.load("en_ner_bionlp13cg_md")
+        except Exception as e:
+            raise ValueError("Ensure that the Spacy model 'en_ner_bionlp13cg_md' is installed.") from e
 
-        # Biomedical NE tag mapping
         self.tag_to_idx = {
             'O': 0,
             'AMINO_ACID': 1,
@@ -65,33 +66,24 @@ class T5Dataset(Dataset):
         for word, tag in zip(tokens, ne_tags):
             subwords = self.tokenizer.tokenize(word)
             aligned_tags.extend([tag] * len(subwords))
-
         aligned_tags = aligned_tags[:self.max_len]
         if len(aligned_tags) < self.max_len:
             aligned_tags += ['O'] * (self.max_len - len(aligned_tags))
-
         aligned_ne_tag_ids = torch.tensor([self.tag_to_idx.get(tag, 0) for tag in aligned_tags], dtype=torch.long)
         return aligned_ne_tag_ids
 
     def __getitem__(self, idx):
         source_text = self.load_file(self.source_files[idx])
         target_text = self.load_file(self.target_files[idx])
-
         source_input_ids, source_attention_mask, source_ne_tags = self.preprocess(source_text)
         target_input_ids, target_attention_mask, target_ne_tags = self.preprocess(target_text)
-
         return source_input_ids, source_attention_mask, source_ne_tags, target_input_ids, target_attention_mask, target_ne_tags
 
 def create_dataloaders(data_dir, tokenizer, batch_size, num_workers=4):
     train_dataset = T5Dataset(data_dir=os.path.join(data_dir, 'train'), source_ext='_en.txt', target_ext='_pt.txt', tokenizer=tokenizer)
     val_dataset = T5Dataset(data_dir=os.path.join(data_dir, 'val'), source_ext='_en.txt', target_ext='_pt.txt', tokenizer=tokenizer)
     test_dataset = T5Dataset(data_dir=os.path.join(data_dir, 'test'), source_ext='_en.txt', target_ext='_pt.txt', tokenizer=tokenizer)
-
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-
     return train_dataloader, val_dataloader, test_dataloader
-
-#self.tokenizer = T5Tokenizer.from_pretrained('t5-base', legacy=False)
-#later add
